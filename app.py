@@ -40,16 +40,15 @@ def obtener_juegos_hoy():
         for juego in juegos_raw:
             game_id = juego.get("game_id")
             
-            # Valores por defecto para evitar crashes
+            # Valores por defecto
             lineup_visitante = []
             lineup_local = []
             p_vis_id = None
             p_loc_id = None
 
+            # 1. Intentamos sacar lineups del boxscore
             try:
                 detalles = statsapi.boxscore_data(game_id)
-                
-                # Extracción segura de Lineups usando .get()
                 for p in detalles.get('awayBatters', []):
                     if isinstance(p, dict) and p.get('person') and p.get('battingOrder'):
                         lineup_visitante.append(p['person'].get('fullName'))
@@ -57,28 +56,24 @@ def obtener_juegos_hoy():
                 for p in detalles.get('homeBatters', []):
                     if isinstance(p, dict) and p.get('person') and p.get('battingOrder'):
                         lineup_local.append(p['person'].get('fullName'))
+            except Exception:
+                pass
 
-                # --- NUEVA LÓGICA DE BÚSQUEDA DE PITCHERS ---
+            # 2. Buscamos a los pitchers por nombre en la base de datos
             nombre_vis = juego.get("away_probable_pitcher", "")
             nombre_loc = juego.get("home_probable_pitcher", "")
 
-            # Si el boxscore no nos dio el ID, lo buscamos por nombre
-            if not p_vis_id and nombre_vis:
+            if nombre_vis:
                 busqueda_vis = statsapi.lookup_player(nombre_vis)
                 if busqueda_vis:
                     p_vis_id = busqueda_vis[0].get('id')
 
-            if not p_loc_id and nombre_loc:
+            if nombre_loc:
                 busqueda_loc = statsapi.lookup_player(nombre_loc)
                 if busqueda_loc:
                     p_loc_id = busqueda_loc[0].get('id')
-            # --------------------------------------------
 
-            except Exception as e:
-                # Si falla el boxscore de un juego, lo dejamos en blanco y el ciclo continúa
-                pass
-
-            # Obtener estadísticas (si hay ID válido)
+            # 3. Obtener estadísticas reales de la temporada
             stats_vis = obtener_stats_pitcher(p_vis_id)
             stats_loc = obtener_stats_pitcher(p_loc_id)
 
@@ -90,13 +85,13 @@ def obtener_juegos_hoy():
                     "local": juego.get("home_name")
                 },
                 "pitcher_visitante": {
-                    "nombre": juego.get("away_probable_pitcher", "TBD"),
+                    "nombre": nombre_vis if nombre_vis else "TBD",
                     "era": stats_vis["era"],
                     "whip": stats_vis["whip"],
                     "k_temporada": stats_vis["k"]
                 },
                 "pitcher_local": {
-                    "nombre": juego.get("home_probable_pitcher", "TBD"),
+                    "nombre": nombre_loc if nombre_loc else "TBD",
                     "era": stats_loc["era"],
                     "whip": stats_loc["whip"],
                     "k_temporada": stats_loc["k"]
