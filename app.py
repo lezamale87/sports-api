@@ -1,11 +1,3 @@
-¡Excelente decisión! Las interfaces bonitas no sirven de nada si los datos que muestran no son precisos. Entremos al terreno del Machine Learning y la Sabermetría.
-
-Para crear nuestro MVP (Producto Mínimo Viable) del algoritmo, vamos a construir una función matemática que asigne una calificación del 1 al 100 a cada lanzador basándose en sus métricas, castigando el descontrol (alto WHIP) y premiando la efectividad (bajo ERA). Luego, enfrentaremos esas dos calificaciones para sacar el Win Probability (Probabilidad de Victoria), agregando un pequeño bono por la ventaja de jugar en casa (Home Field Advantage).
-
-🧠 El Algoritmo en Python
-Abre tu archivo app.py y vamos a inyectar las funciones matemáticas. Copia y reemplaza todo tu código con esta nueva versión:
-
-Python
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import statsapi
