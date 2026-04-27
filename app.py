@@ -14,11 +14,10 @@ app.add_middleware(
 )
 
 def obtener_stats_pitcher(pitcher_id):
-    """Busca ERA, WHIP y K's de un pitcher por su ID"""
+    """Busca ERA, WHIP y K's de un pitcher por su ID con manejo de errores"""
     if not pitcher_id:
         return {"era": "N/A", "whip": "N/A", "k": "N/A"}
     try:
-        # Buscamos las estadísticas de la temporada actual
         stats = statsapi.player_stat_data(pitcher_id, group="pitching", type="season")
         if stats and 'stats' in stats and len(stats['stats']) > 0:
             s = stats['stats'][0]['stats']
@@ -35,25 +34,44 @@ def obtener_stats_pitcher(pitcher_id):
 def obtener_juegos_hoy():
     hoy = datetime.now().strftime("%m/%d/%Y")
     try:
-        # 1. Obtenemos el calendario básico
         juegos_raw = statsapi.schedule(date=hoy)
         juegos_formateados = []
 
         for juego in juegos_raw:
             game_id = juego.get("game_id")
             
-            # 2. Obtenemos detalles profundos (Boxscore) para Lineups y IDs de Pitchers
-            # Esto nos permite ver si ya hay jugadores en el orden al bate
-            detalles = statsapi.boxscore_data(game_id)
-            
-            # Lógica de Lineup
-            lineup_visitante = [p['person']['fullName'] for p in detalles['awayBatters'] if p['battingOrder']]
-            lineup_local = [p['person']['fullName'] for p in detalles['homeBatters'] if p['battingOrder']]
+            # Valores por defecto para evitar crashes
+            lineup_visitante = []
+            lineup_local = []
+            p_vis_id = None
+            p_loc_id = None
 
-            # Lógica de Pitchers y sus Stats
-            p_vis_id = detalles['awayPitchers'][0]['person']['id'] if detalles['awayPitchers'] else None
-            p_loc_id = detalles['homePitchers'][0]['person']['id'] if detalles['homePitchers'] else None
+            try:
+                detalles = statsapi.boxscore_data(game_id)
+                
+                # Extracción segura de Lineups usando .get()
+                for p in detalles.get('awayBatters', []):
+                    if isinstance(p, dict) and p.get('person') and p.get('battingOrder'):
+                        lineup_visitante.append(p['person'].get('fullName'))
+                        
+                for p in detalles.get('homeBatters', []):
+                    if isinstance(p, dict) and p.get('person') and p.get('battingOrder'):
+                        lineup_local.append(p['person'].get('fullName'))
 
+                # Extracción segura de IDs de Pitchers
+                away_pitchers = detalles.get('awayPitchers', [])
+                if away_pitchers and isinstance(away_pitchers[0], dict) and away_pitchers[0].get('person'):
+                    p_vis_id = away_pitchers[0]['person'].get('id')
+
+                home_pitchers = detalles.get('homePitchers', [])
+                if home_pitchers and isinstance(home_pitchers[0], dict) and home_pitchers[0].get('person'):
+                    p_loc_id = home_pitchers[0]['person'].get('id')
+
+            except Exception as e:
+                # Si falla el boxscore de un juego, lo dejamos en blanco y el ciclo continúa
+                pass
+
+            # Obtener estadísticas (si hay ID válido)
             stats_vis = obtener_stats_pitcher(p_vis_id)
             stats_loc = obtener_stats_pitcher(p_loc_id)
 
@@ -84,7 +102,7 @@ def obtener_juegos_hoy():
 
         return {"deporte": "MLB", "fecha": hoy, "total_juegos": len(juegos_formateados), "data": juegos_formateados}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error_general": str(e)}
 
 @app.get("/")
 def home():
