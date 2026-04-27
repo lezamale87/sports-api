@@ -58,14 +58,21 @@ def obtener_juegos_hoy():
                     if isinstance(p, dict) and p.get('person') and p.get('battingOrder'):
                         lineup_local.append(p['person'].get('fullName'))
 
-                # Extracción segura de IDs de Pitchers
-                away_pitchers = detalles.get('awayPitchers', [])
-                if away_pitchers and isinstance(away_pitchers[0], dict) and away_pitchers[0].get('person'):
-                    p_vis_id = away_pitchers[0]['person'].get('id')
+                # --- NUEVA LÓGICA DE BÚSQUEDA DE PITCHERS ---
+            nombre_vis = juego.get("away_probable_pitcher", "")
+            nombre_loc = juego.get("home_probable_pitcher", "")
 
-                home_pitchers = detalles.get('homePitchers', [])
-                if home_pitchers and isinstance(home_pitchers[0], dict) and home_pitchers[0].get('person'):
-                    p_loc_id = home_pitchers[0]['person'].get('id')
+            # Si el boxscore no nos dio el ID, lo buscamos por nombre
+            if not p_vis_id and nombre_vis:
+                busqueda_vis = statsapi.lookup_player(nombre_vis)
+                if busqueda_vis:
+                    p_vis_id = busqueda_vis[0].get('id')
+
+            if not p_loc_id and nombre_loc:
+                busqueda_loc = statsapi.lookup_player(nombre_loc)
+                if busqueda_loc:
+                    p_loc_id = busqueda_loc[0].get('id')
+            # --------------------------------------------
 
             except Exception as e:
                 # Si falla el boxscore de un juego, lo dejamos en blanco y el ciclo continúa
