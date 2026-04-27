@@ -158,3 +158,4 @@ def obtener_juegos_hoy():
 @app.get("/")
 def home():
     return {"mensaje": "API MLB Predicciones Activa"}
+#prueba
