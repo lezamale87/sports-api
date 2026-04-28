@@ -15,7 +15,7 @@ app.add_middleware(
 )
 
 # === CONFIGURACIÓN ===
-API_KEY_SPORTS = "TU_API_KEY_AQUÍ" # <--- PEGA TU LLAVE AQUÍ
+API_KEY_SPORTS = "d32efe9d296f4f8268b3a83c024a312c" # <--- PEGA TU LLAVE AQUÍ
 
 # === UTILIDADES MLB ===
 def calcular_power_rating(era, whip, k):
