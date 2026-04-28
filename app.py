@@ -4,7 +4,7 @@ import statsapi
 import requests
 from datetime import datetime
 
-app = FastAPI(title="Especialista BET - Central API")
+app = FastAPI(title="Especialista BET - Central Multi-Sport")
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,25 +15,7 @@ app.add_middleware(
 )
 
 # === CONFIGURACIÓN ===
-API_KEY_SPORTS = "d32efe9d296f4f8268b3a83c024a312c" # <--- PEGA TU LLAVE AQUÍ
-
-# === UTILIDADES MLB ===
-def calcular_power_rating(era, whip, k):
-    if era == "N/A" or whip == "N/A": return 50.0
-    try:
-        score = 50.0 + (4.00 - float(era)) * 10 + (1.30 - float(whip)) * 25 + (int(k) * 0.2)
-        return max(10.0, min(90.0, round(score, 2)))
-    except: return 50.0
-
-def obtener_stats_pitcher(pitcher_id):
-    if not pitcher_id: return {"era": "N/A", "whip": "N/A", "k": "N/A"}
-    try:
-        stats = statsapi.player_stat_data(pitcher_id, group="pitching", type="season")
-        if stats and 'stats' in stats and len(stats['stats']) > 0:
-            s = stats['stats'][0]['stats']
-            return {"era": s.get("era", "0.00"), "whip": s.get("whip", "0.00"), "k": s.get("strikeOuts", 0)}
-    except: pass
-    return {"era": "N/A", "whip": "N/A", "k": "N/A"}
+API_KEY_SPORTS = "d32efe9d296f4f8268b3a83c024a312c"
 
 # === ENDPOINTS ===
 
@@ -44,40 +26,43 @@ def obtener_mlb():
         juegos_raw = statsapi.schedule(date=hoy)
         res = []
         for j in juegos_raw:
-            # Lógica simplificada para velocidad
-            p_vis, p_loc = j.get("away_probable_pitcher"), j.get("home_probable_pitcher")
             res.append({
                 "id": j.get("game_id"),
+                "estado": j.get("status"),
                 "equipos": {
                     "vis": {"n": j.get("away_name"), "l": f"https://www.mlbstatic.com/team-logos/{j.get('away_id')}.svg"},
                     "loc": {"n": j.get("home_name"), "l": f"https://www.mlbstatic.com/team-logos/{j.get('home_id')}.svg"}
-                },
-                "pitchers": {"vis": p_vis or "TBD", "loc": p_loc or "TBD"}
+                }
             })
-        return {"data": res}
+        return {"total": len(res), "data": res}
     except: return {"error": "Error MLB"}
 
 @app.get("/api/futbol/hoy")
 def obtener_futbol():
     url = "https://v3.football.api-sports.io/fixtures"
-    params = {"date": datetime.now().strftime("%Y-%m-%d"), "status": "NS"}
+    # Quitamos el filtro 'NS' para que traiga TODO lo del día (en juego, terminados y por jugar)
+    params = {"date": datetime.now().strftime("%Y-%m-%d")}
     headers = {"x-rapidapi-key": API_KEY_SPORTS, "x-rapidapi-host": "v3.football.api-sports.io"}
     
     try:
         response = requests.get(url, headers=headers, params=params)
         data = response.json().get("response", [])
         juegos = []
+        # Ligas Top: Champions(2), Premier(39), LaLiga(140), Serie A(135), Bundesliga(78)
+        ligas_permitidas = [2, 39, 140, 135, 78]
+        
         for f in data:
-            # Filtramos Ligas Top (Champions=2, Premier=39, LaLiga=140)
-            if f["league"]["id"] in [2, 39, 140, 135, 78]:
+            if f["league"]["id"] in ligas_permitidas:
                 juegos.append({
                     "liga": f["league"]["name"],
+                    "estado": f["fixture"]["status"]["long"],
                     "local": {"n": f["teams"]["home"]["name"], "l": f["teams"]["home"]["logo"]},
                     "visitante": {"n": f["teams"]["away"]["name"], "l": f["teams"]["away"]["logo"]},
-                    "cuotas_mock": "1: 2.10 | X: 3.20 | 2: 3.50"
+                    "marcador": f"{f['goals']['home']} - {f['goals']['away']}"
                 })
-        return {"data": juegos}
-    except: return {"error": "Error Fútbol"}
+        return {"total": len(juegos), "data": juegos}
+    except Exception as e: 
+        return {"error": str(e)}
 
 @app.get("/api/nba/hoy")
 def obtener_nba():
@@ -93,11 +78,12 @@ def obtener_nba():
             juegos.append({
                 "estado": g["status"]["long"],
                 "local": {"n": g["teams"]["home"]["name"], "l": g["teams"]["home"]["logo"]},
-                "visitante": {"n": g["teams"]["visitors"]["name"], "l": g["teams"]["visitors"]["logo"]}
+                "visitante": {"n": g["teams"]["visitors"]["name"], "l": g["teams"]["visitors"]["logo"]},
+                "marcador": f"{g['scores']['home']['points']} - {g['scores']['visitors']['points']}"
             })
-        return {"data": juegos}
+        return {"total": len(juegos), "data": juegos}
     except: return {"error": "Error NBA"}
 
 @app.get("/")
 def home():
-    return {"status": "Online", "servicios": ["MLB", "Fútbol", "NBA"]}
+    return {"status": "Online", "msg": "Especialista BET Central Ready"}
