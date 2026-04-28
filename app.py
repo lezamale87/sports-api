@@ -1,14 +1,17 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+# 1. ESTE IMPORT ES OBLIGATORIO
+from fastapi.middleware.cors import CORSMiddleware 
 import statsapi
 import requests
 from datetime import datetime
 
+# 2. AQUÍ SE CREA LA APP
 app = FastAPI(title="Especialista BET - Central Multi-Sport")
 
+# 3. AQUÍ DEBES PEGAR EL BLOQUE DE CORSMIDDLEWARE
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
