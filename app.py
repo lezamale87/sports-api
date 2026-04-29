@@ -120,36 +120,48 @@ def obtener_futbol(date: Optional[str] = None):
 @app.get("/api/nba/hoy")
 def obtener_nba(date: Optional[str] = None):
     target_date = date if date else datetime.now().strftime("%Y-%m-%d")
+    # Pedimos hoy y mañana para capturar juegos que cruzan la medianoche por zona horaria
     next_date = (datetime.strptime(target_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
     url = "https://v2.nba.api-sports.io/games"
     headers = {"x-rapidapi-key": API_KEY_SPORTS, "x-rapidapi-host": "v2.nba.api-sports.io"}
+    
     try:
-        # NBA no maneja timezone. Buscamos dos días y cortamos con exactitud matemática
         all_data = []
         r1 = requests.get(url, headers=headers, params={"date": target_date}).json()
-        if "response" in r1 and isinstance(r1["response"], list): all_data.extend(r1["response"])
+        if "response" in r1: all_data.extend(r1["response"])
         
         r2 = requests.get(url, headers=headers, params={"date": next_date}).json()
-        if "response" in r2 and isinstance(r2["response"], list): all_data.extend(r2["response"])
+        if "response" in r2: all_data.extend(r2["response"])
         
-        unique_data = {g["id"]: g for g in all_data}.values()
+        # Eliminar duplicados por ID
+        unique_games = {g["id"]: g for g in all_data}.values()
         
         juegos = []
-        for g in unique_data:
+        for g in unique_games:
             hora_utc = g["date"]["start"]
-            # FILTRO ESTRICTO: Solo juegos programados en América para ese target_date
-            if get_et_date_str(hora_utc, target_date) != target_date: continue
+            # Filtro estricto: Solo juegos cuya fecha programada en ET sea la que pedimos
+            if get_et_date_str(hora_utc, target_date) != target_date:
+                continue
             
+            # Lógica de Estado en Vivo mejorada para NBA
+            status_short = str(g["status"]["short"]).strip()
+            reloj = str(g["status"].get("clock", "")).replace("None", "").strip()
+            
+            if status_short in ["FT", "AOT", "Final"]:
+                vivo = "FINAL"
+            elif status_short in ["HLF", "Halftime"]:
+                vivo = "MITAD"
+            elif status_short.isdigit():
+                # Si es un número (ej: 4), le ponemos Q4
+                vivo = f"Q{status_short} {reloj}".strip()
+            else:
+                vivo = f"{status_short} {reloj}".strip()
+
             p_l = f"{round(48+(g['teams']['home']['id']%15),1)}%"
             p_v = f"{round(100-float(p_l.replace('%','')),1)}%"
-            
-            cuarto = str(g["status"]["short"]).strip()
-            if cuarto.isdigit(): cuarto = f"Q{cuarto}" 
-            reloj = str(g["status"].get("clock", "")).replace("None", "").strip()
-            vivo = f"{cuarto} {reloj}".strip()
 
             juegos.append({
-                "id": g["id"], "deporte": "nba", "estado": g["status"]["short"],
+                "id": g["id"], "deporte": "nba", "estado": status_short,
                 "estado_vivo": vivo, "hora_utc": hora_utc,
                 "equipos": {
                     "loc": {"n": g["teams"]["home"]["name"], "l": g["teams"]["home"]["logo"], "form": ["W","W","L","W","L"]},
@@ -160,4 +172,6 @@ def obtener_nba(date: Optional[str] = None):
                 "prediccion_modelo": {"prob_local": p_l, "prob_visitante": p_v, "pick_recomendado": "Local" if float(p_l.replace('%','')) > 50 else "Visitante"}
             })
         return {"data": juegos}
-    except: return {"data": []}
+    except Exception as e:
+        print(f"Error NBA: {e}")
+        return {"data": []}
