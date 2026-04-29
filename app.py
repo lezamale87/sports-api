@@ -1,17 +1,14 @@
 from fastapi import FastAPI
-# 1. ESTE IMPORT ES OBLIGATORIO
-from fastapi.middleware.cors import CORSMiddleware 
+from fastapi.middleware.cors import CORSMiddleware
 import statsapi
 import requests
 from datetime import datetime
 
-# 2. AQUÍ SE CREA LA APP
 app = FastAPI(title="Especialista BET - Central Multi-Sport")
 
-# 3. AQUÍ DEBES PEGAR EL BLOQUE DE CORSMIDDLEWARE
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -21,7 +18,17 @@ API_KEY_SPORTS = "d32efe9d296f4f8268b3a83c024a312c"
 
 # === 1. ALGORITMOS DE PREDICCIÓN ===
 
-# MLB
+# MLB (Sabermetría Completa Restaurada)
+def obtener_stats_pitcher(pitcher_id):
+    if not pitcher_id: return {"era": "N/A", "whip": "N/A", "k": "N/A"}
+    try:
+        stats = statsapi.player_stat_data(pitcher_id, group="pitching", type="season")
+        if stats and 'stats' in stats and len(stats['stats']) > 0:
+            s = stats['stats'][0]['stats']
+            return {"era": s.get("era", "0.00"), "whip": s.get("whip", "0.00"), "k": s.get("strikeOuts", 0)}
+    except: pass
+    return {"era": "N/A", "whip": "N/A", "k": "N/A"}
+
 def calcular_power_rating_mlb(era, whip, k):
     if era == "N/A" or whip == "N/A": return 50.0
     try:
@@ -29,15 +36,20 @@ def calcular_power_rating_mlb(era, whip, k):
         return max(10.0, min(90.0, round(score, 2)))
     except: return 50.0
 
+def calcular_probabilidades_mlb(score_vis, score_loc):
+    score_loc_adj = score_loc + 3.0 # Ventaja local
+    total = score_vis + score_loc_adj
+    prob_vis = round((score_vis / total) * 100, 2)
+    prob_loc = round((score_loc_adj / total) * 100, 2)
+    pick = "Local" if prob_loc > prob_vis else "Visitante"
+    return prob_vis, prob_loc, pick
+
 # FUTBOL (Modelo 3-Way: 1X2)
 def calcular_prediccion_futbol(id_local, id_visitante):
-    # Generamos un Power Rating base usando el ID del equipo (MVP)
-    # En el futuro, esto se conectará a tu base de datos de estadísticas
     rating_loc = 70.0 + (id_local % 25) + 5.0 # +5 por ventaja de localía
     rating_vis = 70.0 + (id_visitante % 25)
     
     total = rating_loc + rating_vis
-    # Asignamos un 25% base al empate, que es el promedio histórico en ligas top
     prob_empate = 25.0
     margen_restante = 100.0 - prob_empate
     
@@ -49,7 +61,7 @@ def calcular_prediccion_futbol(id_local, id_visitante):
     elif prob_vis > prob_loc and prob_vis > 40:
         pick = "Visitante"
     else:
-        pick = "Empate o Doble Oportunidad"
+        pick = "Empate / Doble Oportunidad"
         
     return prob_loc, prob_empate, prob_vis, pick
 
@@ -73,16 +85,44 @@ def obtener_mlb():
         juegos_raw = statsapi.schedule(date=hoy)
         res = []
         for j in juegos_raw:
+            id_vis = j.get("away_id", 1)
+            id_loc = j.get("home_id", 1)
+            
+            # Buscando los pitchers reales
+            nombre_vis = j.get("away_probable_pitcher", "")
+            nombre_loc = j.get("home_probable_pitcher", "")
+            
+            p_vis_id, p_loc_id = None, None
+            if nombre_vis:
+                busqueda = statsapi.lookup_player(nombre_vis)
+                if busqueda: p_vis_id = busqueda[0].get('id')
+            if nombre_loc:
+                busqueda = statsapi.lookup_player(nombre_loc)
+                if busqueda: p_loc_id = busqueda[0].get('id')
+            
+            stats_vis = obtener_stats_pitcher(p_vis_id)
+            stats_loc = obtener_stats_pitcher(p_loc_id)
+            
+            r_vis = calcular_power_rating_mlb(stats_vis["era"], stats_vis["whip"], stats_vis["k"])
+            r_loc = calcular_power_rating_mlb(stats_loc["era"], stats_loc["whip"], stats_loc["k"])
+            p_vis, p_loc, pick = calcular_probabilidades_mlb(r_vis, r_loc)
+
             res.append({
                 "id": j.get("game_id"),
                 "estado": j.get("status"),
                 "equipos": {
-                    "vis": {"n": j.get("away_name"), "l": f"https://www.mlbstatic.com/team-logos/{j.get('away_id')}.svg"},
-                    "loc": {"n": j.get("home_name"), "l": f"https://www.mlbstatic.com/team-logos/{j.get('home_id')}.svg"}
+                    "vis": {"n": j.get("away_name"), "l": f"https://www.mlbstatic.com/team-logos/{id_vis}.svg"},
+                    "loc": {"n": j.get("home_name"), "l": f"https://www.mlbstatic.com/team-logos/{id_loc}.svg"}
+                },
+                "marcador": None,
+                "prediccion_modelo": {
+                    "prob_visitante": f"{p_vis}%",
+                    "prob_local": f"{p_loc}%",
+                    "pick_recomendado": pick
                 }
             })
         return {"total": len(res), "data": res}
-    except: return {"error": "Error MLB"}
+    except Exception as e: return {"error": str(e)}
 
 @app.get("/api/futbol/hoy")
 def obtener_futbol():
