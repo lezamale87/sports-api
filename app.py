@@ -47,15 +47,10 @@ def obtener_mlb(date: Optional[str] = None):
             id_v, id_l = j.get("away_id"), j.get("home_id")
             p_v, p_l = f"{round(44+(id_v%12),1)}%", f"{round(56-(id_v%12),1)}%"
             
-            # Flechas para Inning (Top / Bot)
             top_bot = j.get("inning_state", "")
             inning_num = j.get("current_inning", "")
-            if top_bot and inning_num:
-                estado_v = f"{top_bot} {inning_num}"
-            else:
-                estado_v = j.get("detailed_state", "")
+            estado_v = f"{top_bot} {inning_num}" if top_bot and inning_num else j.get("detailed_state", "")
 
-            # Lineup Mockado
             lineup = [{"n": f"{i}. Bateador", "avg": f".{290-i*5}"} for i in range(1, 10)]
 
             res.append({
@@ -70,16 +65,11 @@ def obtener_mlb(date: Optional[str] = None):
                     "loc": get_pitcher_stats(j.get("home_probable_pitcher"))
                 },
                 "lineups": {"vis": lineup, "loc": lineup},
-                # Si es 0, que pase 0 y no None
                 "score": {
                     "vis": j.get("away_score") if j.get("away_score") is not None else "", 
                     "loc": j.get("home_score") if j.get("home_score") is not None else ""
                 },
-                "betting": {
-                    "ml_v": prob_to_ml(p_v), "ml_l": prob_to_ml(p_l),
-                    "spread": "-1.5" if float(p_l.replace('%','')) > 50 else "+1.5",
-                    "total": "8.5"
-                },
+                "betting": {"ml_v": prob_to_ml(p_v), "ml_l": prob_to_ml(p_l), "spread": "-1.5" if float(p_l.replace('%','')) > 50 else "+1.5", "total": "8.5"},
                 "prediccion_modelo": {"prob_visitante": p_v, "prob_local": p_l, "pick_recomendado": "Local" if float(p_l.replace('%','')) > 50 else "Visitante"}
             })
             res[-1]["pitchers"]["vis"]["n"] = j.get("away_probable_pitcher", "TBD")
@@ -92,15 +82,18 @@ def obtener_futbol(date: Optional[str] = None):
     target_date = date if date else datetime.now().strftime("%Y-%m-%d")
     url = "https://v3.football.api-sports.io/fixtures"
     headers = {"x-rapidapi-key": API_KEY_SPORTS, "x-rapidapi-host": "v3.football.api-sports.io"}
-    # timezone America/New_York sincroniza perfecto con Venezuela/Este de USA
     try:
-        data = requests.get(url, headers=headers, params={"date": target_date, "timezone": "America/New_York"}).json().get("response", [])
+        data = requests.get(url, headers=headers, params={"date": target_date}).json().get("response", [])
         juegos = []
+        # Ligas ampliadas: Mundial, Champions, Europa, Conference, Premier, FA Cup, La Liga, Copa del Rey, Serie A, Coppa Italia, Bundesliga, Ligue 1, Libertadores, Sudamericana, etc.
+        ligas_top = [1, 2, 3, 9, 13, 17, 39, 45, 48, 61, 66, 78, 81, 94, 135, 137, 140, 143, 529, 848]
+        
         for f in data:
-            if f["league"]["id"] in [2, 39, 140, 135, 78]:
+            if f["league"]["id"] in ligas_top:
                 p_l, p_v = "45%", "30%"
                 juegos.append({
-                    "id": f["fixture"]["id"], "deporte": "futbol", "estado": f["fixture"]["status"]["short"],
+                    "id": f["fixture"]["id"], "deporte": "futbol", "liga": f["league"]["name"],
+                    "estado": f["fixture"]["status"]["short"],
                     "estado_vivo": str(f["fixture"]["status"]["elapsed"]) + "'" if f["fixture"]["status"]["elapsed"] else f["fixture"]["status"]["short"],
                     "hora_utc": f["fixture"]["date"],
                     "equipos": {
@@ -123,16 +116,15 @@ def obtener_nba(date: Optional[str] = None):
     url = "https://v2.nba.api-sports.io/games"
     headers = {"x-rapidapi-key": API_KEY_SPORTS, "x-rapidapi-host": "v2.nba.api-sports.io"}
     try:
-        data = requests.get(url, headers=headers, params={"date": target_date, "timezone": "America/New_York"}).json().get("response", [])
+        # Quitamos el timezone que causaba el conflicto, usamos la fecha pura programada
+        data = requests.get(url, headers=headers, params={"date": target_date}).json().get("response", [])
         juegos = []
         for g in data:
             p_l = f"{round(48+(g['teams']['home']['id']%15),1)}%"
             p_v = f"{round(100-float(p_l.replace('%','')),1)}%"
             
-            # Limpieza del estatus para quitar el "none"
             cuarto = str(g["status"]["short"]).strip()
-            if cuarto.isdigit(): cuarto = f"Q{cuarto}" # Convierte "3" a "Q3"
-            
+            if cuarto.isdigit(): cuarto = f"Q{cuarto}" 
             reloj = str(g["status"].get("clock", "")).replace("None", "").strip()
             vivo = f"{cuarto} {reloj}".strip()
 
@@ -147,10 +139,7 @@ def obtener_nba(date: Optional[str] = None):
                     "loc": g["scores"]["home"]["points"] if g["scores"]["home"]["points"] is not None else "", 
                     "vis": g["scores"]["visitors"]["points"] if g["scores"]["visitors"]["points"] is not None else ""
                 },
-                "betting": {
-                    "ml_v": prob_to_ml(p_v), "ml_l": prob_to_ml(p_l),
-                    "spread": "-4.5" if float(p_l.replace('%','')) > 50 else "+4.5", "total": "224.5"
-                },
+                "betting": {"ml_v": prob_to_ml(p_v), "ml_l": prob_to_ml(p_l), "spread": "-4.5" if float(p_l.replace('%','')) > 50 else "+4.5", "total": "224.5"},
                 "prediccion_modelo": {"prob_local": p_l, "prob_visitante": p_v, "pick_recomendado": "Local" if float(p_l.replace('%','')) > 50 else "Visitante"}
             })
         return {"data": juegos}
